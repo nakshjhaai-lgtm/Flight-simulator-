@@ -19,7 +19,7 @@ export const TODS: Record<TodId, Tod> = {
 
 const SKY_VS = `varying vec3 vDir; void main(){ vDir = normalize(position); vec4 p = modelViewMatrix*vec4(position,1.); gl_Position = projectionMatrix*p; gl_Position.z = gl_Position.w; }`;
 const SKY_FS = `
-uniform vec3 uZenith,uHorizon,uGround,uSunDir,uSunCol,uMoonDir,uCloudLit,uCloudDark,uAurA,uAurB;
+uniform vec3 uZenith,uHorizon,uGround,uSunDir,uSunCol,uMoonDir,uCloudLit,uCloudDark,uAurA,uAurB,uHaze;
 uniform float uStars,uTime,uMoon,uCover,uAurora,uSunI,uSunUp;
 varying vec3 vDir;
 float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
@@ -30,6 +30,10 @@ void main(){
   float t=pow(clamp(h,0.,1.),0.48);
   vec3 col=mix(uHorizon,uZenith,t);
   col=mix(col,uGround,smoothstep(0.,-0.18,h));
+  // The ground fades into the scene fog; make the sky converge on that same colour at the
+  // horizon so the terrain/sky boundary disappears instead of showing a hard line.
+  float hzb=1.-smoothstep(0.0,0.19,abs(h));
+  col=mix(col,uHaze,hzb*0.78);
   float sd=max(dot(d,uSunDir),0.);
   col+=uSunCol*(pow(sd,5.)*0.16+pow(sd,48.)*0.35)*uSunI*0.35;
   col+=uHorizon*pow(sd,2.)*0.25*(1.-t);
@@ -112,6 +116,7 @@ export class World {
   orbs: THREE.Points;
   windsock: THREE.Group; ground: Ground; tick = 0;
   detail: THREE.DataTexture;
+  terrMat: THREE.MeshStandardMaterial | null = null;
   pmrem: THREE.PMREMGenerator | null = null;
   envRT: THREE.WebGLRenderTarget | null = null;
   sunDir = new THREE.Vector3(); moonDir = new THREE.Vector3(0.4, 0.62, -0.67).normalize();
@@ -145,7 +150,7 @@ export class World {
     this.skyMat = new THREE.ShaderMaterial({
       vertexShader: SKY_VS, fragmentShader: SKY_FS, side: THREE.BackSide, depthWrite: false, fog: false,
       uniforms: {
-        uZenith: { value: new THREE.Color() }, uHorizon: { value: new THREE.Color() }, uGround: { value: new THREE.Color() },
+        uZenith: { value: new THREE.Color() }, uHorizon: { value: new THREE.Color() }, uGround: { value: new THREE.Color() }, uHaze: { value: new THREE.Color() },
         uSunDir: { value: this.sunDir }, uSunCol: { value: new THREE.Color() }, uMoonDir: { value: this.moonDir },
         uCloudLit: { value: new THREE.Color() }, uCloudDark: { value: new THREE.Color() },
         uAurA: { value: new THREE.Color(map.accent) }, uAurB: { value: new THREE.Color(map.accent2) },
@@ -160,6 +165,8 @@ export class World {
     // terrain
     this.detail = tileNoiseTexture(256, map.seed + "det", 4);
     const tg = buildTerrainMeshes(map, terr, this.detail, quality);
+    this.terrMat = tg.userData.mat as THREE.MeshStandardMaterial;
+    this.syncTerrainHaze();
     scene.add(tg);
 
     // water
@@ -190,6 +197,19 @@ export class World {
     this.setTod(todId);
   }
 
+  /** Keeps the terrain's aerial-perspective uniforms in step with the time of day. */
+  private syncTerrainHaze() {
+    const U = this.terrMat?.userData.u as
+      | { uSunDir: { value: THREE.Vector3 }; uSunI: { value: number }; uSunCol: { value: THREE.Color }; uHazeD: { value: number } }
+      | undefined;
+    if (!U) return;
+    const t = this.tod;
+    U.uSunDir.value.copy(this.sunDir);
+    U.uSunI.value = Math.min(1.2, t.sunInt / 3) * (t.sunEl < 0 ? 0.4 : 1);
+    U.uSunCol.value.set(t.sunColor);
+    U.uHazeD.value = t.fogDensity * this.map.fog;
+  }
+
   // ------------------------------------------------------------------ tod
   setTod(id: TodId) {
     const t = (this.tod = TODS[id]);
@@ -207,7 +227,9 @@ export class World {
     this.sun.intensity = night ? 0.9 : Math.max(0.5, t.sunInt) * (t.sunEl < 0 ? 0.35 : 1);
     this.hemi.color.set(t.hemiSky); this.hemi.groundColor.set(t.hemiGround); this.hemi.intensity = t.hemiInt;
     (this.scene.fog as THREE.FogExp2).color.set(t.fog);
+    (u.uHaze.value as THREE.Color).set(t.fog);
     (this.scene.fog as THREE.FogExp2).density = t.fogDensity * this.map.fog;
+    this.syncTerrainHaze();
     this.renderer.toneMappingExposure = t.exposure;
     for (const m of this.lightMats) m.opacity = Math.min(1, 0.12 + t.lights * 0.95);
     for (const m of this.emissiveMats) m.emissiveIntensity = t.lights * 1.5;

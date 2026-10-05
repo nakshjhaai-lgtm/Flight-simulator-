@@ -79,9 +79,10 @@ export const AIRCRAFT: AircraftDef[] = [
     ],
     hull: [[-5.2, 0.75, 0.7], [5.0, 0.75, 0.7], [-0.13, 1.0, -2.45], [-0.13, 1.9, 4.5], [-0.13, 0.5, 1.0]],
     eye: [-0.45, 1.36, 0.1], cockpit: "ga",
+    // axes are the aircraft's own: props and fans turn about Z (the thrust axis)
     spin: [
-      { re: /^helice$/, axis: "y", rate: 1 },
-      { re: /^propblur$|^propdisc$/, axis: "y", rate: 0 },
+      { re: /^helice$/, axis: "z", rate: 1 },
+      { re: /^propblur$|^propdisc$/, axis: "z", rate: 0 },
     ],
     keep: /^(helice|propblur|propdisc|aileron|volet)/i,
     hideInCockpit: /^(vitres|vitreporteG|propdisc)$/,
@@ -137,7 +138,10 @@ export const AIRCRAFT: AircraftDef[] = [
     ],
     hull: [[-13.5, 3.8, -1.0], [13.5, 3.8, -1.0], [0, 2.5, -10.5], [0, 5.5, 11.6], [0, 1.3, 2.0]],
     eye: [-0.55, 3.15, -8.0], cockpit: "liner",
-    spin: [{ re: /^Prop/i, axis: "y", rate: 1 }],
+    spin: [
+      { re: /^Prop\d+$/, axis: "z", rate: 1 },
+      { re: /^PropBlur\d+$/, axis: "z", rate: 0 },
+    ],
     keep: /^(Prop|rootNode)/i,
     hideInCockpit: /^(Prop2)$/,
     bounds: { len: 22.8, span: 27.7, h: 7.6 },
@@ -217,7 +221,10 @@ export const AIRCRAFT: AircraftDef[] = [
     ],
     hull: [[-20, 4.5, 4.0], [23.5, 4.5, 4.0], [1.6, 2.0, -24.8], [1.6, 15.5, 29.5], [1.6, 0.0, 3.0]],
     eye: [-0.2, 5.0, -22.0], cockpit: "liner",
-    spin: [{ re: /^eng\dFan$/i, axis: "z", rate: 1 }],
+    spin: [
+      { re: /^eng\dFan$/i, axis: "z", rate: 1 },
+      { re: /^eng\dFanBlur$/i, axis: "z", rate: 0 },
+    ],
     keep: /^(eng\dFan)/i,
     bounds: { len: 55.5, span: 45, h: 17 },
     phys: mk({

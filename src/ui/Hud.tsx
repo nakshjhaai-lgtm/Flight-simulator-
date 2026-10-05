@@ -1,56 +1,67 @@
 import type { Hud, Settings } from "../game/engine";
+import { cardinal, speedReading, heightReading, vsReading, hdgText } from "../game/instruments";
 
-const CARD = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
-export const cardinal = (h: number) => CARD[Math.round(((h % 360) + 360) % 360 / 45) % 8];
-
-export function fmtSpeed(ms: number, u: Settings["units"]) { return u === "metric" ? { v: Math.round(ms * 3.6), unit: "km/h" } : { v: Math.round(ms * 1.944), unit: "kt" }; }
-export function fmtAlt(m: number, u: Settings["units"]) { return u === "metric" ? { v: Math.round(m), unit: "m" } : { v: Math.round(m * 3.281), unit: "ft" }; }
-
-function SpeedBar({ hud, units }: { hud: Hud; units: Settings["units"] }) {
-  const max = hud.vMax;
-  const p = (v: number) => `${Math.min(100, Math.max(0, (v / max) * 100))}%`;
-  const rot = hud.vStall * 1.22;
-  const sp = fmtSpeed(hud.speed, units);
-  return (
-    <div className={"speed " + (hud.tut?.hl === "speed" ? "hl" : "")}>
-      <div className="num"><span className="lab">SPEED</span><b>{sp.v}</b><small>{sp.unit}</small></div>
-      <div className="bar">
-        <i className="z red" style={{ left: 0, width: p(hud.vStall) }} />
-        <i className="z yel" style={{ left: p(hud.vStall), width: `calc(${p(hud.vStall * 1.3)} - ${p(hud.vStall)})` }} />
-        <i className="z grn" style={{ left: p(hud.vStall * 1.3), width: `calc(${p(max * 0.82)} - ${p(hud.vStall * 1.3)})` }} />
-        <i className="z red" style={{ left: p(max * 0.82), right: 0 }} />
-        {hud.state === "Parked" || hud.state === "Taking off" || hud.state === "Taxiing" ? <u className="rot" style={{ left: p(rot) }}><em>ROTATE</em></u> : null}
-        <span className="needle" style={{ left: p(hud.speed) }} />
-      </div>
-    </div>
-  );
-}
-
+/**
+ * Flight HUD.
+ *
+ * Everything a pilot reads often lives in one card; everything they read rarely is hidden
+ * until it is true (a warning, a hint, an out-of-tolerance docking value). The numbers come
+ * from the same formatters the 3-D cockpit panel uses, so the two never disagree.
+ */
 export function HudView({ hud, units, showFps }: { hud: Hud; units: Settings["units"]; showFps: boolean }) {
-  const alt = fmtAlt(hud.alt, units);
-  const vs = units === "metric" ? hud.vs : hud.vs * 3.281;
   const space = hud.kind === "space";
   const hl = hud.tut?.hl;
   const sd = space && hud.space ? hud.space : null;
+  const spd = space ? { v: hud.speed, unit: "m/s" } : speedReading(hud.speed, units);
+  const hgt = space ? { v: Math.round(hud.alt), unit: "m" } : heightReading(hud.alt, units);
+  const vs = vsReading(hud.vs, units);
+  // docking tolerances: only shout about the one the pilot has to fix
+  const dock = sd?.dock;
+  const dockBad = dock ? dock.ok.findIndex((ok) => !ok) : -1;
+
   return (
     <div className="hud">
-      <div className="hud-tl">
-        {space ? (
-          <div className="speed">
-            <div className="num"><span className="lab">SPEED</span><b>{(hud.speed).toFixed(1)}</b><small>m/s</small></div>
-            <div className="bar space"><span className="needle" style={{ left: `${Math.min(100, (hud.speed / 60) * 100)}%` }} /></div>
+      {/* ── one primary flight card ─────────────────────────────────────── */}
+      <div className={"pcard " + (hl === "speed" || hl === "alt" ? "hl" : "")}>
+        <div className="pmain">
+          <span className="lab">{space ? "SPEED" : "SPEED"}</span>
+          <b>{typeof spd.v === "number" && !space ? spd.v : spd.v.toFixed(space ? 1 : 0)}</b>
+          <small>{spd.unit}</small>
+        </div>
+        {!space && (
+          <div className="bar">
+            <i className="z red" style={{ left: 0, width: `${pct(hud.vStall, hud.vMax)}%` }} />
+            <i className="z yel" style={{ left: `${pct(hud.vStall, hud.vMax)}%`, width: `${pct(hud.vStall * 1.3, hud.vMax) - pct(hud.vStall, hud.vMax)}%` }} />
+            <i className="z grn" style={{ left: `${pct(hud.vStall * 1.3, hud.vMax)}%`, width: `${pct(hud.vMax * 0.82, hud.vMax) - pct(hud.vStall * 1.3, hud.vMax)}%` }} />
+            <i className="z red" style={{ left: `${pct(hud.vMax * 0.82, hud.vMax)}%`, right: 0 }} />
+            {isRolling(hud.state) ? <u className="rot" style={{ left: `${pct(hud.vStall * 1.22, hud.vMax)}%` }}><em>ROTATE</em></u> : null}
+            <span className="needle" style={{ left: `${pct(hud.speed, hud.vMax)}%` }} />
           </div>
-        ) : <SpeedBar hud={hud} units={units} />}
-        <div className="row2">
-          <div className={"mini " + (hl === "alt" ? "hl" : "")}><span className="lab">{space ? "RANGE" : "HEIGHT"}</span><b>{space ? Math.round(hud.alt) : alt.v}</b><small>{space ? "m" : alt.unit}</small></div>
-          <div className="mini"><span className="lab">{space ? "CLOSING" : "CLIMB"}</span><b className={space ? "" : vs > 0.5 ? "up" : vs < -0.5 ? "dn" : ""}>{space ? hud.vs.toFixed(1) : (vs > 0 ? "▲ " : vs < 0 ? "▼ " : "") + Math.abs(vs).toFixed(units === "metric" ? 1 : 0)}</b><small>{space ? "m/s" : units === "metric" ? "m/s" : "ft/s"}</small></div>
+        )}
+        {space && <div className="bar space"><span className="needle" style={{ left: `${Math.min(100, (hud.speed / 60) * 100)}%` }} /></div>}
+        <div className="prow">
+          <div className={"pcell " + (hl === "alt" ? "hl" : "")}>
+            <span className="lab">{space ? "RANGE" : "HEIGHT"}</span>
+            <b>{hgt.v}</b><small>{hgt.unit}</small>
+          </div>
+          <div className="pcell">
+            <span className="lab">{space ? "CLOSING" : "V/S"}</span>
+            <b className={space ? "" : hud.vs > 0.5 ? "up" : hud.vs < -0.5 ? "dn" : ""}>
+              {space ? hud.vs.toFixed(1) : `${hud.vs > 0.5 ? "▲" : hud.vs < -0.5 ? "▼" : ""}${Math.abs(vs.v)}`}
+            </b>
+            <small>{space ? "m/s" : vs.unit}</small>
+          </div>
+          {!space && (
+            <div className="pcell hdg">
+              <span className="lab">HDG</span>
+              <b>{hdgText(hud.hdg)}</b><small>{cardinal(hud.hdg)}</small>
+            </div>
+          )}
         </div>
       </div>
 
+      {/* ── objective / tutorial, centred and only as big as it needs to be ─ */}
       <div className="hud-tc">
-        {!space && (
-          <div className="compass"><b>{String(Math.round(hud.hdg) % 360).padStart(3, "0")}°</b><span>{cardinal(hud.hdg)}</span></div>
-        )}
         {hud.tut ? (
           <div className={"tut " + (hud.tut.done ? "done" : "")}>
             <div className="dots">{Array.from({ length: hud.tut.n }).map((_, i) => <i key={i} className={i < hud.tut!.i ? "d" : i === hud.tut!.i ? "c" : ""} />)}</div>
@@ -63,18 +74,25 @@ export function HudView({ hud, units, showFps }: { hud: Hud; units: Settings["un
         {hud.warn ? <div className={"warn l" + hud.warnLevel}>{hud.warn}</div> : null}
       </div>
 
+      {/* ── one status pill top-right ───────────────────────────────────── */}
       <div className="hud-tr-state">
-        <span className="state">{hud.state}</span>
-        {!space && <span className={"att " + (hud.assist ? "on" : "")}>{hud.assist ? "ASSIST" : "MANUAL"}</span>}
+        <span className="state">{hud.state}{!space && !hud.assist ? <i className="man"> · MANUAL</i> : null}</span>
         {showFps && <span className="fps">{hud.fps} fps</span>}
       </div>
 
-      {sd && (
-        <div className="dock">
-          <div className={sd.dock.ok[0] ? "ok" : ""}><span>OFFSET</span><b>{sd.dock.lateral.toFixed(1)} m</b></div>
-          <div className={sd.dock.ok[1] ? "ok" : ""}><span>ALIGN</span><b>{sd.dock.angle.toFixed(0)}°</b></div>
-          <div className={sd.dock.ok[2] ? "ok" : ""}><span>SPIN Δ</span><b>{(sd.dock.spinDelta * 9.549).toFixed(1)} rpm</b></div>
-          <div className={sd.dock.ok[3] ? "ok" : ""}><span>CLOSING</span><b>{sd.dock.closing.toFixed(1)} m/s</b></div>
+      {/* ── docking: a single strip; the failing value is the loud one ──── */}
+      {dock && (
+        <div className={"dock " + (dockBad === -1 ? "all" : "")}>
+          {[
+            { k: "OFFSET", v: `${dock.lateral.toFixed(1)} m`, ok: dock.ok[0] },
+            { k: "ALIGN", v: `${dock.angle.toFixed(0)}°`, ok: dock.ok[1] },
+            { k: "SPIN", v: `${(dock.spinDelta * 9.549).toFixed(1)} rpm`, ok: dock.ok[2] },
+            { k: "CLOSING", v: `${dock.closing.toFixed(1)} m/s`, ok: dock.ok[3] },
+          ].map((d, i) => (
+            <div key={d.k} className={d.ok ? "ok" : i === dockBad ? "bad" : "dim"}>
+              <span>{d.k}</span><b>{d.v}</b>
+            </div>
+          ))}
         </div>
       )}
 
@@ -89,3 +107,6 @@ export function HudView({ hud, units, showFps }: { hud: Hud; units: Settings["un
     </div>
   );
 }
+
+const pct = (v: number, max: number) => Math.min(100, Math.max(0, (v / Math.max(1, max)) * 100));
+const isRolling = (state: string) => state === "Parked" || state === "Taking off" || state === "Taxiing" || state === "Stopped";

@@ -78,35 +78,39 @@ button { font: inherit; color: inherit; border: 0; background: none; cursor: poi
 .chip.sel { background: var(--pink); color: #3a1240; font-weight: 700; box-shadow: none; }
 
 /* ---------------- HUD */
+/* ---------------- HUD: one primary card, everything else contextual */
 .hud { position: absolute; inset: 0; pointer-events: none; z-index: 4; padding: calc(var(--sat) + 8px) calc(var(--sar) + 70px) 0 calc(var(--sal) + 12px); text-shadow: 0 1px 4px rgba(0, 0, 0, 0.7); font-variant-numeric: tabular-nums; }
 .hud b { font-weight: 700; }
-.hud-tl { position: absolute; top: calc(var(--sat) + 8px); left: calc(var(--sal) + 12px); display: flex; flex-direction: column; gap: 6px; }
-.speed, .mini { background: var(--glass); border-radius: 14px; padding: 6px 12px 8px; box-shadow: inset 0 0 0 1px var(--line); }
-.speed { min-width: clamp(130px, 28vh, 190px); }
-.lab { font-size: 9px; letter-spacing: 0.22em; color: var(--cyan); margin-right: 8px; }
-.speed .num b { font-size: clamp(22px, 6vh, 34px); line-height: 1; }
-.speed small, .mini small { font-size: 11px; color: var(--ink2); margin-left: 4px; }
-.bar { position: relative; height: 7px; border-radius: 4px; margin-top: 6px; background: rgba(255, 255, 255, 0.1); }
-.bar .z { position: absolute; top: 0; bottom: 0; opacity: 0.9; }
+.pcard { position: absolute; top: calc(var(--sat) + 8px); left: calc(var(--sal) + 12px); background: var(--glass); border-radius: 15px; padding: 6px 12px 7px; box-shadow: inset 0 0 0 1px var(--line); min-width: clamp(148px, 30vh, 205px); backdrop-filter: blur(2px); }
+.lab { font-size: 8.5px; letter-spacing: 0.2em; color: var(--cyan); margin-right: 6px; }
+.pmain { display: flex; align-items: baseline; }
+.pmain b { font-size: clamp(24px, 6.4vh, 36px); line-height: 1; letter-spacing: -0.01em; }
+.pmain small { font-size: 10px; color: var(--ink2); margin-left: 4px; }
+.bar { position: relative; height: 6px; border-radius: 4px; margin-top: 5px; background: rgba(255, 255, 255, 0.1); }
+.bar .z { position: absolute; top: 0; bottom: 0; opacity: 0.85; }
 .bar .z.red { background: var(--red); } .bar .z.yel { background: var(--amber); } .bar .z.grn { background: var(--green); }
 .bar .z:first-child { border-radius: 4px 0 0 4px; } .bar .z:nth-child(4) { border-radius: 0 4px 4px 0; }
-.bar .needle { position: absolute; top: -4px; width: 3px; height: 15px; background: #fff; border-radius: 2px; transform: translateX(-1px); box-shadow: 0 0 8px #fff; transition: left 0.1s linear; }
-.bar .rot { position: absolute; top: -5px; width: 2px; height: 17px; background: var(--cyan); }
-.bar .rot em { position: absolute; top: 17px; left: 50%; transform: translateX(-50%); font-style: normal; font-size: 8px; letter-spacing: 0.15em; color: var(--cyan); }
+.bar .needle { position: absolute; top: -4px; width: 3px; height: 14px; background: #fff; border-radius: 2px; transform: translateX(-1px); box-shadow: 0 0 8px #fff; transition: left 0.1s linear; }
+.bar .rot { position: absolute; top: -5px; width: 2px; height: 16px; background: var(--cyan); }
+.bar .rot em { position: absolute; top: 16px; left: 50%; transform: translateX(-50%); font-style: normal; font-size: 7.5px; letter-spacing: 0.14em; color: var(--cyan); }
 .bar.space { background: linear-gradient(90deg, rgba(127, 230, 224, 0.4), rgba(255, 158, 199, 0.5)); }
-.row2 { display: flex; gap: 6px; }
-.mini { flex: 1; padding: 5px 10px 6px; white-space: nowrap; }
-.mini b { font-size: clamp(14px, 3.6vh, 20px); }
-.mini b.up { color: var(--green); } .mini b.dn { color: var(--amber); }
-.hud-tc { position: absolute; top: calc(var(--sat) + 6px); left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 6px; width: min(46vw, 440px); }
-.compass { display: flex; align-items: baseline; gap: 8px; background: var(--glass); padding: 3px 14px; border-radius: 999px; box-shadow: inset 0 0 0 1px var(--line); }
-.compass b { font-size: clamp(14px, 3.4vh, 19px); letter-spacing: 0.1em; } .compass span { color: var(--cyan); font-size: 12px; font-weight: 700; }
-.obj { background: var(--glass); border-radius: 14px; padding: 5px 14px; text-align: center; box-shadow: inset 0 0 0 1px var(--line); }
-.obj b { display: block; font-size: clamp(12px, 2.9vh, 15px); font-family: var(--serif); font-style: italic; font-weight: 600; }
-.obj span { font-size: clamp(10px, 2.3vh, 12px); color: var(--ink2); }
-.tut { background: linear-gradient(180deg, rgba(40, 24, 90, 0.9), rgba(24, 16, 60, 0.85)); border-radius: 16px; padding: 7px 14px 9px; box-shadow: inset 0 0 0 1.5px rgba(127, 230, 224, 0.5), 0 6px 30px rgba(0, 0, 0, 0.35); text-align: center; transition: box-shadow 0.3s, background 0.3s; }
+.prow { display: flex; gap: 10px; margin-top: 6px; padding-top: 5px; border-top: 1px solid rgba(255, 255, 255, 0.09); }
+.pcell { white-space: nowrap; line-height: 1.15; }
+.pcell .lab { display: block; margin: 0 0 1px; }
+.pcell b { font-size: clamp(14px, 3.5vh, 19px); }
+.pcell small { font-size: 9px; color: var(--ink2); margin-left: 3px; }
+.pcell b.up { color: var(--green); } .pcell b.dn { color: var(--amber); }
+.pcell.hdg b { letter-spacing: 0.04em; } .pcell.hdg small { color: var(--cyan); font-weight: 700; }
+.pcell.hl { animation: cellpulse 1s infinite alternate; border-radius: 6px; }
+@keyframes cellpulse { to { box-shadow: 0 0 0 2px var(--cyan); } }
+
+.hud-tc { position: absolute; top: calc(var(--sat) + 6px); left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 5px; width: min(46vw, 430px); }
+.obj { background: var(--glass); border-radius: 999px; padding: 4px 15px; text-align: center; box-shadow: inset 0 0 0 1px var(--line); }
+.obj b { font-size: clamp(12px, 2.9vh, 15px); font-family: var(--serif); font-style: italic; font-weight: 600; }
+.obj span { font-size: clamp(10px, 2.3vh, 12px); color: var(--ink2); margin-left: 8px; }
+.tut { background: linear-gradient(180deg, rgba(40, 24, 90, 0.9), rgba(24, 16, 60, 0.85)); border-radius: 15px; padding: 6px 14px 8px; box-shadow: inset 0 0 0 1.5px rgba(127, 230, 224, 0.5), 0 6px 30px rgba(0, 0, 0, 0.35); text-align: center; transition: box-shadow 0.3s, background 0.3s; }
 .tut.done { box-shadow: inset 0 0 0 2px var(--green), 0 0 30px rgba(109, 255, 176, 0.4); }
-.tut h4 { margin: 4px 0 2px; font-family: var(--serif); font-style: italic; font-size: clamp(14px, 3.4vh, 18px); color: var(--pink); }
+.tut h4 { margin: 3px 0 2px; font-family: var(--serif); font-style: italic; font-size: clamp(14px, 3.4vh, 18px); color: var(--pink); }
 .tut p { margin: 0; font-size: clamp(11px, 2.6vh, 14px); line-height: 1.3; color: var(--ink); text-shadow: none; }
 .tut .dots { display: flex; gap: 4px; justify-content: center; }
 .tut .dots i { width: 14px; height: 3px; border-radius: 2px; background: rgba(255, 255, 255, 0.2); } .tut .dots i.d { background: var(--green); } .tut .dots i.c { background: var(--cyan); }
@@ -115,7 +119,9 @@ button { font: inherit; color: inherit; border: 0; background: none; cursor: poi
 @keyframes pulse { to { transform: scale(1.06); filter: brightness(1.2); } }
 .hud-tr-state { position: absolute; top: calc(var(--sat) + 62px); right: calc(var(--sar) + 14px); display: flex; flex-direction: column; align-items: flex-end; gap: 4px; font-size: 11px; }
 .hud-tr-state span { background: var(--glass); padding: 2px 10px; border-radius: 999px; box-shadow: inset 0 0 0 1px var(--line); }
-.state { color: var(--ink); font-weight: 700; letter-spacing: 0.06em; } .att.on { color: var(--green); } .att { color: var(--amber); } .fps { color: var(--ink2); }
+.state { color: var(--ink); font-weight: 700; letter-spacing: 0.06em; }
+.state .man { font-style: normal; color: var(--amber); }
+.fps { color: var(--ink2); }
 .hint { position: absolute; left: 50%; bottom: calc(var(--sab) + 6px + 41vh); transform: translateX(-50%); padding: 6px 16px; border-radius: 999px; font-weight: 700; font-size: clamp(12px, 3vh, 16px); background: var(--glass2); box-shadow: inset 0 0 0 1.5px var(--line); white-space: nowrap; max-width: 60vw; overflow: hidden; text-overflow: ellipsis; }
 .hint.ok { color: var(--green); box-shadow: inset 0 0 0 1.5px var(--green); } .hint.warn { color: var(--amber); box-shadow: inset 0 0 0 1.5px var(--amber); } .hint.bad { color: var(--red); box-shadow: inset 0 0 0 1.5px var(--red); }
 .marker { position: absolute; transform: translate(-50%, -50%); text-align: center; }
@@ -123,10 +129,17 @@ button { font: inherit; color: inherit; border: 0; background: none; cursor: poi
 .marker .ring::after { content: ""; position: absolute; inset: 40%; border-radius: 50%; background: var(--cyan); }
 .marker .arrow { width: 0; height: 0; border-left: 16px solid var(--cyan); border-top: 10px solid transparent; border-bottom: 10px solid transparent; margin: 0 auto; filter: drop-shadow(0 0 6px var(--cyan)); }
 .marker span { display: inline-block; margin-top: 4px; font-size: 11px; font-weight: 700; background: rgba(10, 8, 40, 0.6); padding: 1px 8px; border-radius: 99px; color: var(--cyan); white-space: nowrap; }
-.dock { position: absolute; left: 50%; bottom: calc(var(--sab) + 8px + 41vh); transform: translateX(-50%); display: flex; gap: 6px; }
-.dock div { background: var(--glass2); border-radius: 12px; padding: 4px 10px; box-shadow: inset 0 0 0 1.5px rgba(255, 93, 122, 0.7); text-align: center; min-width: 70px; }
-.dock div.ok { box-shadow: inset 0 0 0 1.5px var(--green); } .dock div.ok b { color: var(--green); }
-.dock span { display: block; font-size: 8px; letter-spacing: 0.2em; color: var(--ink2); } .dock b { font-size: 13px; color: var(--ink); }
+/* Docking strip: one bar. In-tolerance values recede; the one to fix stands out. */
+.dock { position: absolute; left: 50%; bottom: calc(var(--sab) + 8px + 41vh); transform: translateX(-50%); display: flex; gap: 0; background: var(--glass); border-radius: 13px; box-shadow: inset 0 0 0 1px var(--line); padding: 4px 3px; backdrop-filter: blur(2px); }
+.dock div { text-align: center; padding: 1px 10px; border-left: 1px solid rgba(255, 255, 255, 0.09); opacity: 0.55; transition: opacity 0.2s; }
+.dock div:first-child { border-left: 0; }
+.dock div.ok { opacity: 0.8; } .dock div.ok b { color: var(--green); }
+.dock div.dim { opacity: 0.45; }
+.dock div.bad { opacity: 1; background: rgba(255, 93, 122, 0.22); border-radius: 9px; box-shadow: inset 0 0 0 1.5px rgba(255, 93, 122, 0.85); }
+.dock div.bad b { color: #fff; }
+.dock.all { box-shadow: inset 0 0 0 1.5px var(--green); }
+.dock span { display: block; font-size: 7.5px; letter-spacing: 0.16em; color: var(--ink2); }
+.dock b { font-size: 12.5px; color: var(--ink); font-variant-numeric: tabular-nums; }
 
 .hl { animation: hlpulse 1s infinite alternate !important; box-shadow: 0 0 0 3px var(--cyan), 0 0 28px var(--cyan) !important; }
 @keyframes hlpulse { to { box-shadow: 0 0 0 5px var(--pink), 0 0 40px var(--pink); } }

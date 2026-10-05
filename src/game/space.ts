@@ -5,45 +5,26 @@ const clamp = (v: number, a: number, b: number) => (v < a ? a : v > b ? b : v);
 
 const SKY_VS = `varying vec3 vDir; void main(){ vDir=normalize(position); vec4 p=modelViewMatrix*vec4(position,1.); gl_Position=projectionMatrix*p; gl_Position.z=gl_Position.w; }`;
 const SKY_FS = `
-uniform vec3 uBH, uPl, uSun; uniform float uTime;
+uniform vec3 uBH, uPl, uSun, uDiskN; uniform float uTime, uDist, uCone, uDiskI, uSteps;
 varying vec3 vDir;
 float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
 float vn(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x),f.y);}
 float fbm(vec2 p){float s=0.,a=.5;for(int i=0;i<5;i++){s+=a*vn(p);p=p*2.02+vec2(11.,7.);a*=.5;}return s;}
 vec2 proj(vec3 d, vec3 c, out float facing){ vec3 up=abs(c.y)>0.95?vec3(1,0,0):vec3(0,1,0); vec3 r=normalize(cross(up,c)); vec3 u=cross(c,r); facing=dot(d,c); return vec2(dot(d,r),dot(d,u)); }
-void main(){
-  vec3 d=normalize(vDir);
-  // dreamy pastel nebula + dust
+
+// Everything that is not the black hole: nebula, starfield, ringed gas giant.
+vec3 skyBase(vec3 d){
   float n1=fbm(d.xy*2.4+d.z*1.7), n2=fbm(d.zy*3.1-d.x*2.3+4.);
   vec3 col=vec3(0.012,0.014,0.04);
   col+=vec3(0.30,0.12,0.28)*pow(n1,3.2)*0.75+vec3(0.08,0.22,0.34)*pow(n2,3.4)*0.8;
   float band=smoothstep(0.55,0.0,abs(d.y*1.0+d.x*0.35));
   col+=vec3(0.5,0.42,0.6)*band*fbm(d.xz*14.)*0.18;
-  // stars
   vec3 sp=d*300.; vec3 c=floor(sp); float r=hash(c.xy+c.z*19.1);
   float st=step(0.9965,r); col+=vec3(0.9,0.93,1.)*st*(0.5+0.5*sin(uTime*1.5+r*80.));
   float st2=step(0.9992,hash(c.yz*1.3+c.x)); col+=vec3(1.,0.9,0.8)*st2*1.4;
-  // ---- Gargantua (stylised): shadow, photon ring, thin disk, lensed arcs
-  float f; vec2 p=proj(d,uBH,f);
-  if(f>0.0){
-    float rs=0.075; float x=p.x/rs, y=p.y/rs; float rr=length(vec2(x,y));
-    float ring=exp(-pow((rr-1.08)*14.,2.));
-    float arcs=exp(-pow((rr-1.0-0.45*abs(y)/max(rr,0.01)*0.9)*5.5,2.))*smoothstep(0.1,0.55,abs(y)/max(rr,0.01))*smoothstep(3.3,1.0,rr);
-    float diskT=0.075+0.012*abs(x);
-    float disk=exp(-pow(y/diskT,2.))*smoothstep(1.35,1.9,abs(x))*(1.-smoothstep(3.6,6.4,abs(x)));
-    float turb=0.65+0.55*fbm(vec2(x*1.8+uTime*0.15,y*28.));
-    float dop=1.0+0.55*clamp(-x/5.,-1.,1.);
-    vec3 hot=mix(vec3(1.,0.46,0.14),vec3(1.,0.9,0.72),smoothstep(0.0,1.4,ring*1.0+disk*0.9/(0.35+abs(x)*0.28)));
-    float glow=exp(-pow(max(rr-1.0,0.),1.)*1.7)*0.1;
-    float I=(ring*1.6+arcs*0.9+disk*(2.4/(0.5+abs(x)*0.5))*turb)*dop+glow;
-    col+=hot*I;
-    col*=smoothstep(0.93,1.0,rr);
-  }
-  // ---- ringed pastel gas giant
-  vec2 q=proj(d,uPl,f);
+  float f; vec2 q=proj(d,uPl,f);
   if(f>0.0){
     float pr=0.19; vec2 s=q/pr; float rr=length(s);
-    vec2 rg=vec2(s.x*0.35,s.y*1.0*1.0); // ring plane squash
     float tilt=0.24; vec2 rs2=vec2(s.x*cos(tilt)+s.y*sin(tilt), -s.x*sin(tilt)+s.y*cos(tilt));
     float ell=length(vec2(rs2.x/1.0,rs2.y/0.26));
     float ringM=smoothstep(1.55,1.62,ell)*(1.-smoothstep(2.35,2.42,ell))*(0.55+0.45*vn(vec2(ell*40.,0.)));
@@ -54,13 +35,86 @@ void main(){
       float zz=sqrt(1.-rr*rr); vec3 nrm=normalize(vec3(s,zz));
       float lat=nrm.y; float bands=0.5+0.5*sin(lat*16.+fbm(vec2(nrm.x*3.,lat*7.))*3.);
       vec3 base=mix(vec3(0.95,0.62,0.78),vec3(0.62,0.72,1.0),bands);
-      float lit=clamp(dot(nrm,normalize(vec3(-0.6,0.5,0.62)))*0.8+0.25,0.05,1.1);
+      float lit=clamp(dot(nrm,normalize(uSun))*0.8+0.25,0.05,1.1);
       vec3 pc=base*lit; pc+=vec3(0.5,0.5,0.8)*pow(1.-zz,3.)*0.5;
       col=pc; if(front) col=mix(col,ringC*1.1,clamp(ringM,0.,1.)*0.9);
     } else {
       col=mix(col,ringC,clamp(ringM,0.,1.)*0.9);
       col+=vec3(0.5,0.45,0.8)*exp(-(rr-1.)*9.)*0.25;
     }
+  }
+  return col;
+}
+
+// ---- Gargantua: backward integration of Schwarzschild null geodesics.
+// d2u/dlambda2 = -1.5 * h2 * u / |u|^5, with h2 = |u x v|^2 conserved along the ray.
+// Units are Schwarzschild radii, so the horizon sits at |u| = 1 and the photon sphere at 1.5.
+vec3 traceBH(vec3 d, mat3 toBH, mat3 fromBH){
+  vec3 ro = toBH * (-normalize(uBH) * uDist);
+  vec3 rd = toBH * d;
+  vec3 v  = rd;
+  vec3 p  = ro;
+  vec3 cr = cross(p, rd);
+  float h2 = dot(cr, cr);
+  vec3 acc = vec3(0.0);
+  float trans = 1.0;
+  float dt = uDist * 0.045;
+  bool captured = false;
+  int steps = int(uSteps);
+  for (int i = 0; i < 220; i++) {
+    if (i >= steps) break;
+    float r2 = dot(p, p);
+    float r = sqrt(r2);
+    if (r < 1.03) { captured = true; break; }                 // crossed the horizon
+    vec3 a = -1.5 * h2 * p / (r2 * r2 * r);
+    vec3 np = p + v * dt + 0.5 * a * dt * dt;
+    vec3 nv = normalize(v + a * dt);
+    // accretion disk: the equatorial plane of the BH frame, ISCO (3) out to 12
+    if (p.y * np.y < 0.0) {
+      vec3 hp = mix(p, np, p.y / (p.y - np.y));
+      float hr = length(hp.xz);
+      if (hr > 3.0 && hr < 12.0) {
+        float beta = sqrt(0.5 / max(hr - 1.0, 0.55));         // Keplerian speed seen by a static observer
+        vec3 vel = normalize(vec3(-hp.z, 0.0, hp.x)) * beta;
+        float gam = 1.0 / sqrt(max(1.0 - beta * beta, 1e-4));
+        float dop = 1.0 / (gam * max(1.0 - dot(vel, -v), 1e-3));
+        float g = dop * sqrt(max(1.0 - 1.0 / hr, 0.0));       // Doppler x gravitational redshift
+        float turb = 0.55 + 0.7 * fbm(vec2(atan(hp.z, hp.x) * 3.0 + uTime * 0.05, hr * 2.2));
+        float emis = pow(3.0 / hr, 2.2) * turb * (1.0 - smoothstep(8.0, 12.0, hr));
+        vec3 c = mix(vec3(1.0, 0.96, 0.88), vec3(1.0, 0.52, 0.18), smoothstep(3.0, 11.0, hr));
+        c = mix(c, vec3(0.66, 0.82, 1.0), clamp((g - 1.0) * 1.4, 0.0, 0.85));   // approaching side blueshifts
+        c = mix(c, vec3(1.0, 0.26, 0.10), clamp((1.0 - g) * 1.4, 0.0, 0.85));   // receding side redshifts
+        acc += trans * c * emis * pow(g, 3.0) * uDiskI;
+        trans *= 0.5;
+      }
+    }
+    p = np; v = nv;
+    dt = clamp(0.16 * max(r - 1.0, 0.25), 0.02, 0.9);         // fine near the hole, coarse far out
+    if (r > uDist * 0.9 && dot(p, v) > 0.0) { captured = false; break; }  // escaped to infinity
+  }
+  vec3 sky = captured ? vec3(0.0) : skyBase(fromBH * normalize(v));
+  // the photon ring: rays with impact parameter just above the critical 3*sqrt(3)/2 orbit forever
+  float b = length(cross(ro, rd));
+  acc += vec3(1.0, 0.86, 0.62) * exp(-pow((b - 2.5981) * 3.2, 2.0)) * 0.22;
+  return acc + sky * trans;
+}
+
+void main(){
+  vec3 d=normalize(vDir);
+  vec3 col;
+  float ang=acos(clamp(dot(d,normalize(uBH)),-1.,1.));
+  if(ang<uCone){
+    // BH frame: y is the disk normal, so "crossing the equatorial plane" means crossing the disk
+    vec3 nrm=normalize(uDiskN);
+    vec3 tmp=abs(nrm.y)>0.95?vec3(1.,0.,0.):vec3(0.,1.,0.);
+    vec3 bx=normalize(cross(nrm,tmp));
+    vec3 bz=cross(nrm,bx);
+    mat3 fromBH=mat3(bx,nrm,bz);                                          // BH frame -> world
+    mat3 toBH=mat3(bx.x,nrm.x,bz.x, bx.y,nrm.y,bz.y, bx.z,nrm.z,bz.z);     // world -> BH frame
+    col=traceBH(d,toBH,fromBH);
+    col=mix(skyBase(d),col,smoothstep(uCone,uCone*0.62,ang));   // no seam at the edge of the cone
+  } else {
+    col=skyBase(d);
   }
   gl_FragColor=vec4(col,1.);
   #include <tonemapping_fragment>
@@ -106,7 +160,16 @@ export class SpaceWorld {
     s.add(new THREE.HemisphereLight("#8a7bd0", "#2a2040", 0.55));
     this.skyMat = new THREE.ShaderMaterial({
       vertexShader: SKY_VS, fragmentShader: SKY_FS, side: THREE.BackSide, depthWrite: false, fog: false,
-      uniforms: { uBH: { value: new THREE.Vector3(0.62, 0.12, -0.78).normalize() }, uPl: { value: new THREE.Vector3(-0.72, 0.28, 0.63).normalize() }, uSun: { value: new THREE.Vector3(-0.6, 0.5, 0.62).normalize() }, uTime: { value: 0 } },
+      uniforms: {
+        uBH: { value: new THREE.Vector3(0.62, 0.12, -0.78).normalize() },
+        uPl: { value: new THREE.Vector3(-0.72, 0.28, 0.63).normalize() },
+        uSun: { value: new THREE.Vector3(-0.6, 0.5, 0.62).normalize() },
+        uTime: { value: 0 },
+        // Disk normal sits almost perpendicular to the line of sight, so we look at Gargantua
+        // nearly edge-on and get the light from the far side of the disk bent over the top.
+        uDiskN: { value: new THREE.Vector3(-0.1, 0.985, 0.14).normalize() },
+        uDist: { value: 26 }, uCone: { value: 0.46 }, uDiskI: { value: 1.15 }, uSteps: { value: 90 },
+      },
     });
     this.sky = new THREE.Mesh(new THREE.SphereGeometry(1, 48, 24), this.skyMat);
     this.sky.scale.setScalar(9000); this.sky.frustumCulled = false; this.sky.renderOrder = -10; s.add(this.sky);
