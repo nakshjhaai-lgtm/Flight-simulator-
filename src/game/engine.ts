@@ -2,7 +2,9 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { AircraftDef, getAircraft } from "./aircraftDefs";
 import { MODEL_URLS } from "./modelUrls";
-import { FlightModel, SEA_RHO, RHO0, G } from "./flight";
+import { buildAircraft } from "./aircraftMesh";
+import { FlightModel, RHO0, G } from "./flight";
+import { InstrumentData } from "./instruments";
 import { World, TODS, glowTex } from "./world";
 import { getMap, TodId, MapDef } from "./terrain";
 import { Cockpit } from "./cockpit";
@@ -57,7 +59,22 @@ function floatGeo(g: THREE.BufferGeometry) {
 
 async function loadModel(def: AircraftDef): Promise<THREE.Group> {
   if (tpl.has(def.id)) return tpl.get(def.id)!.clone(true);
-  const gltf = await loader.loadAsync(MODEL_URLS[def.id]);
+  const procedural = () => {
+    const p = buildAircraft(def, "#e2564f");
+    tpl.set(def.id, p);
+    return p.clone(true);
+  };
+  const url = MODEL_URLS[def.id];
+  if (!url) return procedural(); // no bundled model (the committed .glb files are corrupt)
+  let gltf;
+  try {
+    gltf = await loader.loadAsync(url);
+  } catch (err) {
+    // The .glb files in this repo are not parseable (see tools/verify-assets.mjs). Rather than
+    // leaving the player with an invisible aeroplane and no flight model, fly the stand-in.
+    console.warn(`[Liminal Wings] ${def.id}.glb could not be loaded, using the procedural airframe:`, (err as Error)?.message ?? err);
+    return procedural();
+  }
   const src = gltf.scene; src.updateMatrixWorld(true);
   const out = new THREE.Group();
   const byMat = new Map<THREE.Material, THREE.BufferGeometry[]>();
@@ -504,11 +521,21 @@ export class Engine {
     }
   }
 
-  private instData() {
-    const fm = this.fm, rho = SEA_RHO(fm.pos.y), p = fm.ph;
+  /**
+   * The one place instrument values are assembled. The 2-D HUD and the 3-D cockpit panel are
+   * both driven from this object, which is why they can no longer disagree.
+   */
+  instData(): InstrumentData {
+    const fm = this.fm, p = fm.ph;
+    // stall speed at the current flap setting, so the HUD tape and the ASI arc move together
     const vsNow = Math.sqrt((2 * p.mass * G) / (RHO0 * p.S * (p.CL0 + p.CLa * p.aStall * 0.96 + p.flapCL * fm.flap)));
-    void rho;
-    return { ias: fm.ias, alt: fm.pos.y, vs: fm.vel.y, hdg: fm.heading, pitch: fm.pitchDeg, bank: fm.bankDeg, thr: this.throttle, flaps: fm.flap, g: fm.gLoad, vStall: vsNow, vFlapStall: fm.vsFlap, vMax: p.vRef * 1.9 };
+    return {
+      units: this.settings.units,
+      ias: fm.ias, agl: fm.agl, alt: fm.pos.y, vs: fm.vel.y, hdg: fm.heading,
+      pitch: fm.pitchDeg, bank: fm.bankDeg, g: fm.gLoad,
+      // the detent the pilot selected, not the half-travelled flap position
+      thr: this.throttle, flaps: this.flapsDetent, vStall: vsNow, vFlapStall: fm.vsFlap, vMax: p.vRef * 1.9,
+    };
   }
 
   // ------------------------------------------------------------------ camera
@@ -763,7 +790,8 @@ export class Engine {
     h.thr = this.throttle;
     if (this.kind === "air" && this.fm) {
       const fm = this.fm, d = this.instData();
-      h.speed = fm.ias; h.alt = fm.agl; h.vs = fm.vel.y; h.hdg = fm.heading; h.flaps = this.flapsDetent; h.pitch = fm.pitchDeg; h.bank = fm.bankDeg; h.g = fm.gLoad;
+      // straight off instData() — the cockpit panel is drawing these same numbers
+      h.speed = d.ias; h.alt = d.agl; h.vs = d.vs; h.hdg = d.hdg; h.flaps = d.flaps; h.pitch = d.pitch; h.bank = d.bank; h.g = d.g;
       h.vStall = d.vStall; h.vFlap = d.vFlapStall; h.vMax = d.vMax; h.engineRun = fm.eng > 0.05;
       let state = "";
       if (fm.crashed) state = "Crashed";

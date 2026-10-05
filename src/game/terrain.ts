@@ -237,6 +237,10 @@ function buildLevel(
   heightFn: (x: number, z: number) => number,
   colorFn: (x: number, z: number, h: number, ny: number) => RGB,
   size: number, N: number, hole: number,
+  /** Shared slope epsilon. Using each ring's own cell size instead makes the coarse rings
+   *  compute flatter normals (and therefore flatter vertex colours) than the fine ring at the
+   *  same world position, which reads as a hard seam across the landscape from the air. */
+  normalEps: number,
 ): THREE.BufferGeometry {
   const step = size / N, half = size / 2;
   const V = N + 1;
@@ -253,8 +257,14 @@ function buildLevel(
     const k = j * V + i;
     if (vmap[k] >= 0) return vmap[k];
     const x = -half + i * step, z = -half + j * step, h = H[k];
-    const hl = H[j * V + Math.max(i - 1, 0)], hr = H[j * V + Math.min(i + 1, N)], hd = H[Math.max(j - 1, 0) * V + i], hu = H[Math.min(j + 1, N) * V + i];
-    const nx = (hl - hr) / (2 * step), nz = (hd - hu) / (2 * step);
+    let nx: number, nz: number;
+    if (normalEps < step * 0.95) {
+      nx = (heightFn(x - normalEps, z) - heightFn(x + normalEps, z)) / (2 * normalEps);
+      nz = (heightFn(x, z - normalEps) - heightFn(x, z + normalEps)) / (2 * normalEps);
+    } else {
+      const hl = H[j * V + Math.max(i - 1, 0)], hr = H[j * V + Math.min(i + 1, N)], hd = H[Math.max(j - 1, 0) * V + i], hu = H[Math.min(j + 1, N) * V + i];
+      nx = (hl - hr) / (2 * step); nz = (hd - hu) / (2 * step);
+    }
     const l = Math.hypot(nx, 1, nz);
     const ny = 1 / l;
     const c = colorFn(x, z, h, ny);
@@ -306,10 +316,29 @@ function buildLevel(
 export function buildTerrainMeshes(map: MapDef, terr: Terrain, detail: THREE.Texture, quality: number): THREE.Group {
   const colorFn = makeColorFn(map);
   const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.94, metalness: 0, map: detail });
+  mat.userData.u = {
+    uSunDir: { value: new THREE.Vector3(0.3, 0.6, -0.7) },
+    uSunI: { value: 1 },
+    uSunCol: { value: new THREE.Color("#fff4dc") },
+    uHazeD: { value: 0.000042 },
+  };
+  const U = mat.userData.u;
   mat.onBeforeCompile = (sh) => {
+    Object.assign(sh.uniforms, U);
     sh.vertexShader = sh.vertexShader.replace("#include <common>", "#include <common>\nvarying vec3 vWP;")
       .replace("#include <begin_vertex>", "#include <begin_vertex>\nvWP = (modelMatrix * vec4(position,1.0)).xyz;");
-    sh.fragmentShader = sh.fragmentShader.replace("#include <common>", "#include <common>\nvarying vec3 vWP;")
+    sh.fragmentShader = sh.fragmentShader
+      .replace("#include <common>", "#include <common>\nvarying vec3 vWP;\nuniform vec3 uSunDir,uSunCol;\nuniform float uSunI,uHazeD;")
+      .replace("#include <fog_fragment>", `
+        {
+          // in-scattering toward the sun: what actually makes distance look like air
+          float hd = length(vWP - cameraPosition);
+          float hf = 1.0 - exp(-hd * hd * uHazeD * uHazeD);
+          vec3 vd = (vWP - cameraPosition) / max(hd, 1.0);
+          float sc = pow(max(dot(vd, normalize(uSunDir)), 0.0), 4.0);
+          gl_FragColor.rgb += uSunCol * sc * hf * uSunI * 0.55;
+        }
+        #include <fog_fragment>`)
       .replace("#include <map_fragment>", `
         float dd = length(vWP - cameraPosition);
         float n1 = texture2D(map, vWP.xz * 0.043).r;
@@ -324,16 +353,18 @@ export function buildTerrainMeshes(map: MapDef, terr: Terrain, detail: THREE.Tex
   const g = new THREE.Group();
   const f = quality >= 2 ? 1 : quality === 1 ? 0.8 : 0.62;
   const levels: [number, number, number][] = [
-    [10000, Math.round(288 * f), 0],
-    [44000, Math.round(264 * f), 5000],
-    [260000, Math.round(160 * f), 22000],
+    [9000, Math.round(280 * f), 0],
+    [34000, Math.round(252 * f), 6000],
+    [120000, Math.round(192 * f), 26000],
   ];
+  const normalEps = levels[0][0] / levels[0][1]; // the finest ring's cell size, used by every ring
   for (const [size, N, hole] of levels) {
-    const geo = buildLevel(terr.height, colorFn, size, N, hole);
+    const geo = buildLevel(terr.height, colorFn, size, N, hole, normalEps);
     const m = new THREE.Mesh(geo, mat);
     m.receiveShadow = size < 20000;
     m.frustumCulled = false;
     g.add(m);
   }
+  g.userData.mat = mat;
   return g;
 }

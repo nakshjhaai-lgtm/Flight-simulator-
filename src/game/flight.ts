@@ -92,6 +92,7 @@ export class FlightModel {
   alpha = 0; beta = 0; V = 0; ias = 0; gs = 0; agl = 0; heading = 0; pitchDeg = 0; bankDeg = 0;
   gLoad = 1; stalled = false; stallWarn = false; vs = 0; vsFlap = 0; thrust = 0; sigma = 0; overspeedFlap = false;
   rpm = 0; assistActive = false; cgHeight = 1; turb = 0;
+  mach = 0; groundEffect = 0; buffet = 0; qTail = 1; wheelSpin = 0;
   onRunwaySurface = 0;
   yawG = 0; gndHold = 0; gndLatched = false;
   private fAero = new THREE.Vector3();
@@ -233,16 +234,23 @@ export class FlightModel {
         if (!this.holdLatched && this.releaseT > 0.35) {
           this.gammaHold = clamp(gamma, -0.6, 0.6); this.holdLatched = true; this.ie = this.ie;
         }
-        qCmd = this.holdLatched && Math.abs(theta) < 1.25 ? clamp(1.1 * (this.gammaHold - gamma), -qMax * 0.7, qMax * 0.7) : -q * 0.0;
+        qCmd = this.holdLatched && Math.abs(theta) < 1.25 ? clamp(1.4 * (this.gammaHold - gamma), -qMax * 0.8, qMax * 0.8) : -q * 0.0;
         if (!this.holdLatched) qCmd = 0;
       }
-      // bank compensation (keeps altitude in turns even before hold latches)
-      const cosB = Math.max(0.35, Math.cos(bank));
-      if (Math.abs(bank) < 1.2 && Math.abs(c.pitch) < 0.05) qCmd += (G / Math.max(V, 20)) * (1 / cosB - 1) * 0.0;
-      const aLim = p.aStall * 0.8 + p.flapCL * this.flap * 0.02;
+      // Load-factor compensation: in a bank the wing has to carry 1/cos(bank) of the weight, so
+      // feed the extra pitch demand forward instead of waiting for the integrator to find it.
+      // This is what lets the assist hold altitude through a 45-60 deg turn.
+      const cosB = Math.max(0.3, Math.cos(bank));
+      const nReq = 1 / cosB;
+      if (Math.abs(bank) > 0.05) {
+        qCmd += clamp(0.55 * (G / Math.max(V, 18)) * (nReq - 1), 0, qMax * 0.85);
+        // bleed the flight-path hold back toward level as the turn tightens
+        if (this.holdLatched && Math.abs(c.pitch) < 0.05) this.gammaHold *= 1 - Math.min(0.6, (nReq - 1) * 0.5);
+      }
+      const aLim = p.aStall * 0.82 + p.flapCL * this.flap * 0.02;
       qCmd = Math.min(qCmd, Math.max(-0.4, (aLim - alpha) * 2.6));
       const qErr = qCmd - q;
-      this.ie = clamp(this.ie + 0.9 * qErr * dt * vScale, -0.7, 0.7);
+      this.ie = clamp(this.ie + 1.1 * qErr * dt * vScale, -1.0, 1.0);
       deT = sat(this.ie + 1.1 * qErr * vScale);
       // --- yaw: turn coordination + damper
       drT = sat(yIn + clamp((p.Cnb / p.Cndr) * beta * 1.6 - 0.22 * r * vScale, -0.45, 0.45));
@@ -289,9 +297,32 @@ export class FlightModel {
     const qd = 0.5 * rho * V * V;
     const F = this.fAero.set(0, 0, 0);
     let Mx = 0, My = 0, Mz = 0;
+    // Speed of sound (ISA) and Mach number: compressibility only matters for the jets, but
+    // computing it for everybody keeps the drag polar honest at altitude.
+    const aSnd = 340.3 * Math.sqrt(Math.max(0.2, 1 - 2.25577e-5 * h));
+    const mach = V / aSnd;
+    this.mach = mach;
+    // Ground effect: within about one span of the surface the tip vortices are choked, lift
+    // rises and induced drag falls. This is what makes a real aeroplane float in the flare.
+    const geSpan = Math.max(4, p.b * 0.55);
+    const ge = clamp(1 - agl / geSpan, 0, 1);
+    const geLift = 1 + 0.28 * ge * ge;
+    const geDrag = 1 - 0.5 * ge * ge;
+    this.groundEffect = ge;
+    // Slipstream: the prop wash rams the tail, so pitch authority does not collapse to zero
+    // on the take-off roll the way a bare q*S*Cm model would suggest.
+    // actuator-disk estimate of the slipstream speed, hence of the tail dynamic pressure
+    let qTail = 1;
+    {
+      const dProp = Math.max(1.2, p.b * 0.19);
+      const tPrev = this.thrust || p.power * 0.5 * this.eng;
+      const vSlip = Math.sqrt(Math.max(0, Vf * Vf + (8 * tPrev) / (Math.PI * Math.max(0.05, rho) * dProp * dProp)));
+      qTail = p.engine === "prop" ? clamp(0.55 + 0.45 * (vSlip * vSlip) / Math.max(25, V * V), 0.7, 2.6) : 1;
+      this.qTail = qTail;
+    }
     if (V > 0.5) {
-      const M = 28;
       const a0 = p.aStall;
+      const M = 28;
       const ex1 = Math.exp(clamp(-M * (alpha - a0), -40, 40));
       const ex2 = Math.exp(clamp(M * (alpha + a0), -40, 40));
       const sg = (1 + ex1 + ex2) / ((1 + ex1) * (1 + ex2));
@@ -300,11 +331,13 @@ export class FlightModel {
       const clLin = p.CL0 + p.CLa * aEff + p.flapCL * this.flap;
       const sa = Math.sin(alpha), ca = Math.cos(alpha);
       const clFlat = 2.1 * Math.sign(alpha) * sa * sa * ca;
-      const CL = (1 - sg) * clLin + sg * clFlat;
+      const CL = ((1 - sg) * clLin + sg * clFlat) * geLift;
       const k = 1 / (Math.PI * p.e * p.AR);
-      const cdAtt = p.CD0 + p.flapCD * this.flap + k * clLin * clLin;
+      const cdAtt = p.CD0 + p.flapCD * this.flap + k * clLin * clLin * geDrag;
       const cdFlat = p.CD0 + p.flapCD * this.flap + 1.85 * sa * sa;
-      const CD = (1 - sg) * cdAtt + sg * cdFlat + 0.9 * beta * beta;
+      // transonic drag rise (jets) + a little extra from extended gear/flaps
+      const cdWave = mach > 0.72 ? 24 * Math.pow(mach - 0.72, 3) : 0;
+      const CD = (1 - sg) * cdAtt + sg * cdFlat + 0.9 * beta * beta + cdWave;
       this.stalled = sg > 0.5;
       this.stallWarn = alpha > a0 * 0.82 && V > 5;
       const vh = vhT.copy(vb).multiplyScalar(1 / V);
@@ -318,17 +351,33 @@ export class FlightModel {
       const cb = p.c / (2 * Math.max(V, 8));
       const bb = p.b / (2 * Math.max(V, 8));
       const aMom = clamp(alpha, -0.7, 0.7);
-      const Cm = p.Cm0 + p.Cma * aMom + p.Cmq * q * cb + p.CmdE * this.de + p.flapCm * this.flap
-        - 0.18 * sg * Math.sign(alpha);
+      // Mach tuck: the centre of pressure moves aft through the transonic range
+      const machTuck = mach > 0.74 ? -1.4 * (mach - 0.74) : 0;
+      const Cm = p.Cm0 + p.Cma * aMom + p.Cmq * qTail * q * cb + p.CmdE * qTail * this.de + p.flapCm * this.flap
+        - 0.18 * sg * Math.sign(alpha) + machTuck;
       const Cl = p.Clb * beta + p.Clp * pr * bb + p.Clda * this.da + 0.1 * r * bb * 2;
       const Cn = p.Cnb * beta + p.Cnr * r * bb + p.Cndr * this.dr - 0.12 * p.Clda * this.da;
       // stalled wing drop: roll couples with sideslip + noise
       const stallRoll = sg * (0.04 * Math.sin(this.t * 3.1) + 0.2 * beta) * (p.b > 20 ? 0.3 : 1);
-      Mx = qd * p.S * p.c * Cm;
-      Mz = -qd * p.S * p.b * (Cl + stallRoll);
+      // stall buffet: the separated flow shakes the airframe (feeds the camera shake too)
+      const buffet = sg * Math.min(1, (alpha - a0) * 6) * (0.35 + 0.65 * Math.abs(Math.sin(this.t * 11.3)));
+      this.buffet = buffet;
+      Mx = qd * p.S * p.c * (Cm + buffet * 0.02 * Math.sin(this.t * 27));
+      Mz = -qd * p.S * p.b * (Cl + stallRoll) + qd * p.S * p.b * buffet * 0.012 * Math.sin(this.t * 23 + 1);
       My = -qd * p.S * p.b * Cn;
+      // ---- propeller effects (P-factor, torque roll, gyroscopic precession) ----
+      if (p.engine === "prop" && p.propTorque !== 0) {
+        const tFrac = clamp(this.thrust / Math.max(1, p.power / p.vc), 0, 1.4);
+        // asymmetric blade loading at high alpha yaws the nose left
+        My += -qd * p.S * p.b * 0.5 * p.propTorque * tFrac * clamp(alpha, -0.6, 0.6);
+        // torque reaction rolls the airframe against the prop
+        Mz += qd * p.S * p.b * 0.06 * p.propTorque * tFrac * Math.max(0.15, 1 - Math.abs(Vf) / 90);
+        // gyroscopic precession: yaw right pitches the nose down, pitch up yaws it right
+        const Hg = 0.55 * p.propTorque * p.mass * Math.max(6, p.b) * 0.35 * tFrac;
+        Mx += -r * Hg; My += -q * Hg;
+      }
     } else {
-      this.stalled = false; this.stallWarn = false; this.sigma = 0;
+      this.stalled = false; this.stallWarn = false; this.sigma = 0; this.buffet = 0;
     }
 
     // ---------- thrust ----------
