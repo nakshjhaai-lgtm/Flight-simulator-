@@ -64,9 +64,11 @@ async function loadModel(def: AircraftDef): Promise<THREE.Group> {
     tpl.set(def.id, p);
     return p.clone(true);
   };
+  const url = MODEL_URLS[def.id];
+  if (!url) return procedural(); // no bundled model (the committed .glb files are corrupt)
   let gltf;
   try {
-    gltf = await loader.loadAsync(MODEL_URLS[def.id]);
+    gltf = await loader.loadAsync(url);
   } catch (err) {
     // The .glb files in this repo are not parseable (see tools/verify-assets.mjs). Rather than
     // leaving the player with an invisible aeroplane and no flight model, fly the stand-in.

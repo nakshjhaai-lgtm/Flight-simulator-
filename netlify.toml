@@ -1,0 +1,4 @@
+# Zero-config Netlify: import the repo, pick a branch, deploy. Node comes from .nvmrc.
+[build]
+  command = "npm run build"
+  publish = "dist"
